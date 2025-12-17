@@ -13,6 +13,9 @@ let capturedFrames = [];
 let captureCount = 0;
 const MAX_CAPTURES = 5;
 
+// Global Audio Context to fix sound issues
+let audioCtx = null;
+
 const CHALLENGES = [
   "😁 Show your biggest smile!",
   "😡 Angry face!",
@@ -117,30 +120,32 @@ function triggerCameraEffect() {
     }
   }, 200);
 
-  // 2. Audio Click (Synthetic - No external file needed)
+  // 2. Audio Click (Synthetic - Fixed for autoplay policies)
   try {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (AudioContext) {
-      const ctx = new AudioContext();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+    
+    if (audioCtx) {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
 
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(audioCtx.destination);
 
-      // Create a quick "noise" or "click" sound
+      // Create a quick "shutter" sound
       osc.type = 'triangle';
-      osc.frequency.setValueAtTime(800, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.15);
+      osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.15);
 
-      gain.gain.setValueAtTime(0.1, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
 
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.15);
+      osc.start(audioCtx.currentTime);
+      osc.stop(audioCtx.currentTime + 0.15);
     }
   } catch (e) {
-    console.warn("Shutter sound blocked or not supported", e);
+    console.warn("Shutter sound error", e);
   }
 }
 
@@ -163,8 +168,16 @@ async function initCamera() {
 
   // 2. Camera Access
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    stream = await navigator.mediaDevices.getUserMedia({ 
+      video: { facingMode: 'user' }, // Prefer front camera
+      audio: false 
+    });
+    
     video.srcObject = stream;
+    
+    // FLIP FIX: Mirror the video element so it looks natural
+    video.style.transform = "scaleX(-1)";
+    
     await video.play();
     statusEl.textContent = '✅ Camera is running. Press "Start Game" to begin!';
     statusEl.style.color = '#e5e7eb';
@@ -205,9 +218,14 @@ async function captureAndSendFrame() {
   canvas.height = video.videoHeight;
 
   const ctx = canvas.getContext('2d');
+  
+  // FLIP FIX: Mirror the capture context so the photo matches the mirrored video
+  ctx.translate(canvas.width, 0);
+  ctx.scale(-1, 1);
+  
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-  // CHANGED: Use JPEG with 0.7 quality to reduce file size
+  // Use JPEG with 0.7 quality to reduce file size and ensure upload success
   const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
 
   // Save locally
@@ -241,6 +259,16 @@ async function startGame() {
   downloadBtn.style.display = 'none';
   capturedFrames = [];
   captureCount = 0;
+
+  // Initialize Audio Context on User Gesture (Start Button Click)
+  if (!audioCtx) {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (AudioContext) {
+      audioCtx = new AudioContext();
+    }
+  } else if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
 
   try {
     await initCamera();
