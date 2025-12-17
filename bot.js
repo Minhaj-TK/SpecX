@@ -5,6 +5,7 @@ const { Client, GatewayIntentBits } = require('discord.js');
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
+// CHANGED: Default to port 3000 (standard), remove Spaceify specific 25405
 const PORT = process.env.PORT || 3000;
 
 if (!TOKEN || !CHANNEL_ID) {
@@ -27,12 +28,9 @@ const app = express();
 // Parse JSON bodies (for base64 image)
 app.use(express.json({ limit: '10mb' }));
 
-// Serve static files
-// This assumes 'index.html' and 'script.js' are in a folder named 'public'
-// OR if they are in the root folder, use express.static(__dirname)
+// Serve static files from 'public' folder
 app.use(express.static(path.join(__dirname, 'public')));
-
-// Fallback: If 'public' folder doesn't exist, try serving from root (useful for simple setups)
+// Fallback if files are in root
 app.use(express.static(__dirname));
 
 // Simple health check
@@ -43,34 +41,43 @@ app.get('/health', (req, res) => {
 // Receive image from browser and send to Discord
 app.post('/upload', async (req, res) => {
   try {
-    const { imageBase64 } = req.body;
+    const { imageBase64, challenge } = req.body;
 
     if (!imageBase64) {
+      console.log('❌ Upload request missing imageBase64');
       return res.status(400).json({ ok: false, error: 'No imageBase64 provided' });
     }
 
-    // imageBase64 is a data URL like "data:image/png;base64,...."
+    // Determine extension (jpg or png)
+    const isJpeg = imageBase64.startsWith('data:image/jpeg');
+    const ext = isJpeg ? 'jpg' : 'png';
+
+    // Remove prefix to get raw base64
     const base64Data = imageBase64.split(',')[1] || imageBase64;
     const buffer = Buffer.from(base64Data, 'base64');
 
     const channel = await client.channels.fetch(CHANNEL_ID);
     if (!channel || !channel.isTextBased()) {
-      return res.status(500).json({ ok: false, error: 'Channel not found or not text-based' });
+      console.error(`❌ Channel ${CHANNEL_ID} not found or not text-based.`);
+      return res.status(500).json({ ok: false, error: 'Channel error' });
     }
 
+    // Send to Discord
     await channel.send({
-      content: '📸 New frame from camera game!',
+      content: `📸 **${challenge || 'New frame from camera game!'}**`,
       files: [
         {
           attachment: buffer,
-          name: `camera-frame-${Date.now()}.png`
+          name: `camera-frame-${Date.now()}.${ext}`
         }
       ]
     });
 
+    console.log(`✅ Image sent to Discord (${ext})`);
     res.json({ ok: true });
+
   } catch (err) {
-    console.error('Error in /upload:', err);
+    console.error('❌ Error in /upload:', err);
     res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
@@ -78,7 +85,6 @@ app.post('/upload', async (req, res) => {
 // Start server
 app.listen(PORT, () => {
   console.log(`🌐 Web server running on http://localhost:${PORT}`);
-  console.log(`   (Also accessible via kartcage.com if configured)`);
 });
 
 // Login bot
