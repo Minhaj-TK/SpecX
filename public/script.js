@@ -232,12 +232,18 @@ async function captureAndSendFrame() {
   capturedFrames.push(dataUrl);
   captureCount++;
 
+  // Get current challenge text (Emoji + Name) to send to Discord
+  const currentChallenge = challengeEl.textContent;
+
   try {
     // Relative path works for both localhost and kartcage.com
     await fetch('/upload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageBase64: dataUrl })
+      body: JSON.stringify({ 
+        imageBase64: dataUrl,
+        challenge: currentChallenge 
+      })
     });
     console.log(`Image ${captureCount} sent successfully.`);
   } catch (err) {
